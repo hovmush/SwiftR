@@ -250,7 +250,7 @@ open class SignalR: NSObject, SwiftRWebDelegate {
             
             webView = SwiftRWebView()
             #if os(iOS)
-                webView.delegate = self
+                webView.navigationDelegate = self
                 webView.loadHTMLString(html, baseURL: baseHTMLUrl)
             #else
                 webView.policyDelegate = self
@@ -307,12 +307,14 @@ open class SignalR: NSObject, SwiftRWebDelegate {
     func shouldHandleRequest(_ request: URLRequest) -> Bool {
         if request.url!.absoluteString.hasPrefix("swiftr://") {
             let id = (request.url!.absoluteString as NSString).substring(from: 9)
-            let msg = webView.stringByEvaluatingJavaScript(from: "readMessage('\(id)')")!
-            let data = msg.data(using: String.Encoding.utf8, allowLossyConversion: false)!
-            let json = try! JSONSerialization.jsonObject(with: data, options: [])
-            
-            if let m = json as? [String: Any] {
-                processMessage(m)
+            webView.evaluateJavaScript("readMessage('\(id)')") { (response, error) in
+                if let msg = response as? String {
+                    let data = msg.data(using: String.Encoding.utf8, allowLossyConversion: false)!
+                    let json = try! JSONSerialization.jsonObject(with: data, options: [])
+                    if let m = json as? [String: Any] {
+                        self.processMessage(m)
+                    }
+                }
             }
 
             return false
@@ -397,8 +399,9 @@ open class SignalR: NSObject, SwiftRWebDelegate {
                 callback?(result)
             })
         } else {
-            let result = webView.stringByEvaluatingJavaScript(from: script)
-            callback?(result as AnyObject!)
+            wkWebView.evaluateJavaScript(script, completionHandler: { (result, _)  in
+                callback?(result)
+            })
         }
     }
     
@@ -454,9 +457,7 @@ open class SignalR: NSObject, SwiftRWebDelegate {
     // MARK: - Web delegate methods
     
 #if os(iOS)
-    open func webView(_ webView: UIWebView, shouldStartLoadWith request: URLRequest, navigationType: UIWebViewNavigationType) -> Bool {
-        return shouldHandleRequest(request)
-    }
+    
 #else
     public func webView(_ webView: WebView!, decidePolicyForNavigationAction actionInformation: [AnyHashable : Any]!, request: URLRequest!, frame: WebFrame!, decisionListener listener: WebPolicyDecisionListener!) {
         
@@ -578,8 +579,8 @@ public enum SignalRVersion : CustomStringConvertible {
 }
 
 #if os(iOS)
-    typealias SwiftRWebView = UIWebView
-    public protocol SwiftRWebDelegate: WKNavigationDelegate, WKScriptMessageHandler, UIWebViewDelegate {}
+    typealias SwiftRWebView = WKWebView
+    public protocol SwiftRWebDelegate: WKNavigationDelegate, WKScriptMessageHandler {}
 #else
     typealias SwiftRWebView = WebView
     public protocol SwiftRWebDelegate: WKNavigationDelegate, WKScriptMessageHandler, WebPolicyDelegate {}
